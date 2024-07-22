@@ -4,4 +4,216 @@ author: "Tobias Gradinger"
 date: "2024-07-22"
 ---
 
+```{r Setup, include = F}
+knitr::opts_chunk$set(include = F)
+```
+
+```{r Packages}
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(pander)
+library(ppcor)
+library(car)
+library(ggpubr)
+library(gridExtra)
+library(cowplot)
+library(patchwork)
+library(conflicted)
+library(QuantPsyc)
+library(MeMoBootR)
+#library(png)
+```
+
+```{r SETUP clean-up, eval=T}
+# remove all objects to start with clean environment
+rm(list=ls())
+```
+
+```{r SETUP solve function conflicts}
+conflicts_prefer(dplyr::filter, dplyr::select, dplyr::n())
+```
+
+```{r Functions}
+t.report <- function(tt){
+  tvalue <- tt$statistic %>% formatC(digits = 2, format = "f")
+  pvalue <- tt$p.value %>% formatC(digits = 2, format = "f")
+  if (round(tt$parameter, 0) == tt$parameter) {
+    df <- tt$parameter
+  } else {
+    df <- formatC(digits = 2, format = "f")
+  }
+  if (tt$p.value < 0.0005) {
+    pvalue <- " < 0.001" 
+  } else { 
+    if (tt$p.value < 0.005) {
+      pvalue <- paste0(" = ",tt$p.value %>% formatC(digits = 3, format = "f"))
+    } else {
+      pvalue <- paste0(" = ",tt$p.value %>% formatC(digits = 2, format = "f"))
+    }
+    } 
+  paste0("*t*(",df,") = ",tvalue, ", *p*", pvalue)
+}
+
+mean_sd_se.report <- function(df, filtervar, filter, var){
+  mean <- df %>% filter (!!filtervar == filter) %>% .[[var]] %>% mean() %>% round(2)
+  sd <- df %>% filter (!!filtervar == filter) %>% .[[var]] %>% sd() %>% round(2)
+  se <- df %>% filter (!!filtervar == filter) %>% .[[var]] %>% se() %>% round(2)
+  
+  paste0(filter," mean = ", mean, ", sd = ", sd, ", ", "se = ", se)
+}
+
+remove_outliers <- function(data, variables, multiplier = 2) {
+  for (variable in variables) {
+    Q1 <- quantile(data[[variable]], 0.25, na.rm = TRUE)
+    Q3 <- quantile(data[[variable]], 0.75, na.rm = TRUE)
+    IQR <- Q3 - Q1
+    lower_bound <- Q1 - multiplier * IQR
+    upper_bound <- Q3 + multiplier * IQR
+
+    data <- data %>%
+      filter(get(variable) >= lower_bound & get(variable) <= upper_bound)
+  }
+  
+  return(data)
+}
+```
+
+```{r}
+```
+
+
+```{r}
+#set.seed(123)  # For reproducibility
+n <- 100000
+m <- 1000
+x <- round(rnorm(n, mean = 50, sd = 15))
+x <- ifelse(x < 1, 1, ifelse(x > 100, 100, x)) 
+
+binary_vector <- c(rep(0, n-m), rep(1, m))
+
+# Calculate weights for sampling based on x
+weights <- x / sum(x)  # Normalizing weights
+
+# Perform weighted sampling without replacement
+y <- sample(binary_vector, size = n, replace = FALSE, prob = weights)
+
+# Create the data frame
+simulated_data <- data.frame(x, y)
+```
+
+```{r}
+# Create quintiles based on x
+simulated_data$quintile <- cut(simulated_data$x, 
+                               breaks = quantile(simulated_data$x, probs = seq(0, 1, by = 0.2)), 
+                               include.lowest = TRUE, 
+                               labels = FALSE)
+
+# Calculate the percentage of y = 1 for each quintile
+quintile_summary <- simulated_data %>%
+  group_by(quintile) %>%
+  summarize(
+    total = n(),
+    count_y_1 = sum(y),
+    percentage_y_1 = (count_y_1 / total) * 100,
+    mean_x = mean(x)
+  )
+
+# Print the summary
+print(quintile_summary)
+
+# Visualize the percentage of y = 1 for each quintile
+p_quintiles <- ggplot(quintile_summary, aes(x = factor(quintile), y = percentage_y_1)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Percentage of y = 1 for Each Quintile of x",
+       x = "Quintile of x",
+       y = "Percentage of y = 1") +
+  theme_minimal()
+
+# Display the plot
+print(p_quintiles)
+
+```
+
+
+```{r}
+set.seed(123)
+
+# Step 1: Simulate x from a normal distribution
+x <- rnorm(100000, mean = 50, sd = 15)
+x <- round(x)  # Make x integers
+x <- ifelse(x < 1, 1, ifelse(x > 100, 100, x))  # Ensure x is within 1 to 100
+
+# Step 2: Calculate probabilities for y = 1 using a linear function
+intercept <- -4.605  # Base probability for y = 1
+slope <- 0.01     # Influence of x on probability
+
+# Linear transformation to calculate the logit
+logit <- intercept + slope * x
+
+# Convert logit to probability
+prob_y <- exp(logit) / (1 + exp(logit))
+
+# Ensure the overall probability is approximately 1%
+#prob_y <- prob_y * (0.01 / mean(prob_y))
+
+# Clip probabilities to be within [0, 1]
+prob_y <- pmin(pmax(prob_y, 0), 1)
+
+# Step 3: Sample y using these probabilities
+y <- rbinom(length(x), size = 1, prob = prob_y)
+
+# Combine into a dataframe
+simulated_data <- data.frame(x = x, y = y)
+
+# Step 4: Split x into quintiles
+simulated_data$quintile <- cut(simulated_data$x, 
+                               breaks = quantile(simulated_data$x, probs = seq(0, 1, by = 0.2)), 
+                               include.lowest = TRUE, 
+                               labels = FALSE)
+
+# Step 5: Calculate the percentage of y = 1 and the mean of x for each quintile
+quintile_summary <- simulated_data %>%
+  group_by(quintile) %>%
+  summarize(
+    total = n(),
+    count_y_1 = sum(y),
+    percentage_y_1 = (count_y_1 / total) * 100,
+    mean_x = mean(x)
+  )
+
+# Print the summary
+print(quintile_summary)
+
+# Step 6: Plot the percentage of y = 1 and mean of x for each quintile
+library(ggplot2)
+
+# Plot for percentage of y = 1
+p1 <- ggplot(quintile_summary, aes(x = factor(quintile), y = percentage_y_1)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Percentage of y = 1 for Each Quintile of x",
+       x = "Quintile of x",
+       y = "Percentage of y = 1") +
+  theme_minimal()
+
+# Plot for mean of x
+p2 <- ggplot(quintile_summary, aes(x = factor(quintile), y = mean_x)) +
+  geom_bar(stat = "identity", fill = "salmon") +
+  labs(title = "Mean of x for Each Quintile",
+       x = "Quintile of x",
+       y = "Mean of x") +
+  theme_minimal()
+
+# Display the plots side by side
+library(gridExtra)
+grid.arrange(p1, p2, ncol = 2)
+```
+
+```{r}
+simulated_data %>% 
+  pull(y) %>% 
+  sum()
+
+hist(prob_y)
+```
 
