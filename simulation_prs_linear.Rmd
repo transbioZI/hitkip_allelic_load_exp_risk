@@ -79,64 +79,7 @@ remove_outliers <- function(data, variables, multiplier = 2) {
 }
 ```
 
-```{r}
-```
-
-
-```{r}
-#set.seed(123)  # For reproducibility
-n <- 100000
-m <- 1000
-x <- round(rnorm(n, mean = 50, sd = 15))
-x <- ifelse(x < 1, 1, ifelse(x > 100, 100, x)) 
-
-binary_vector <- c(rep(0, n-m), rep(1, m))
-
-# Calculate weights for sampling based on x
-weights <- x / sum(x)  # Normalizing weights
-
-# Perform weighted sampling without replacement
-y <- sample(binary_vector, size = n, replace = FALSE, prob = weights)
-
-# Create the data frame
-simulated_data <- data.frame(x, y)
-```
-
-```{r}
-# Create quintiles based on x
-simulated_data$quintile <- cut(simulated_data$x, 
-                               breaks = quantile(simulated_data$x, probs = seq(0, 1, by = 0.2)), 
-                               include.lowest = TRUE, 
-                               labels = FALSE)
-
-# Calculate the percentage of y = 1 for each quintile
-quintile_summary <- simulated_data %>%
-  group_by(quintile) %>%
-  summarize(
-    total = n(),
-    count_y_1 = sum(y),
-    percentage_y_1 = (count_y_1 / total) * 100,
-    mean_x = mean(x)
-  )
-
-# Print the summary
-print(quintile_summary)
-
-# Visualize the percentage of y = 1 for each quintile
-p_quintiles <- ggplot(quintile_summary, aes(x = factor(quintile), y = percentage_y_1)) +
-  geom_bar(stat = "identity", fill = "skyblue") +
-  labs(title = "Percentage of y = 1 for Each Quintile of x",
-       x = "Quintile of x",
-       y = "Percentage of y = 1") +
-  theme_minimal()
-
-# Display the plot
-print(p_quintiles)
-
-```
-
-
-```{r}
+```{r Simulate f(y)=logit of x}
 set.seed(123)
 
 # Step 1: Simulate x from a normal distribution
@@ -145,7 +88,7 @@ x <- round(x)  # Make x integers
 x <- ifelse(x < 1, 1, ifelse(x > 100, 100, x))  # Ensure x is within 1 to 100
 
 # Step 2: Calculate probabilities for y = 1 using a linear function
-intercept <- -4.605  # Base probability for y = 1
+intercept <- -4.605  # Base probability for y = 1 = 0.01 (logit(p) = log(p/1-p)) = -4.605
 slope <- 0.01     # Influence of x on probability
 
 # Linear transformation to calculate the logit
@@ -168,7 +111,7 @@ simulated_data <- data.frame(x = x, y = y)
 
 # Step 4: Split x into quintiles
 simulated_data$quintile <- cut(simulated_data$x, 
-                               breaks = quantile(simulated_data$x, probs = seq(0, 1, by = 0.2)), 
+                               breaks = quantile(simulated_data$x, probs = seq(0, 1, by = 0.1)), 
                                include.lowest = TRUE, 
                                labels = FALSE)
 
@@ -178,42 +121,84 @@ quintile_summary <- simulated_data %>%
   summarize(
     total = n(),
     count_y_1 = sum(y),
-    percentage_y_1 = (count_y_1 / total) * 100,
+    percent_y_1 = (count_y_1 / total) * 100,
     mean_x = mean(x)
   )
 
 # Print the summary
 print(quintile_summary)
+```
 
-# Step 6: Plot the percentage of y = 1 and mean of x for each quintile
-library(ggplot2)
+```{r Simulate f(y) = linear(x))}
+set.seed(42)
 
-# Plot for percentage of y = 1
-p1 <- ggplot(quintile_summary, aes(x = factor(quintile), y = percentage_y_1)) +
-  geom_bar(stat = "identity", fill = "skyblue") +
-  labs(title = "Percentage of y = 1 for Each Quintile of x",
-       x = "Quintile of x",
-       y = "Percentage of y = 1") +
-  theme_minimal()
+set.seed(42)
 
-# Plot for mean of x
-p2 <- ggplot(quintile_summary, aes(x = factor(quintile), y = mean_x)) +
-  geom_bar(stat = "identity", fill = "salmon") +
-  labs(title = "Mean of x for Each Quintile",
-       x = "Quintile of x",
-       y = "Mean of x") +
-  theme_minimal()
+# Generate normally distributed x with mean 50 and standard deviation 10
+n <- 100000
+x <- round(rnorm(n, mean = 50, sd = 10))
 
-# Display the plots side by side
-library(gridExtra)
-grid.arrange(p1, p2, ncol = 2)
+# Calculate linear probabilities with a custom scaling to achieve ~1% overall probability of y = 1
+prob_y <- (x - min(x)) / (max(x) - min(x)) * 0.02
+
+# Sample y based on the calculated probabilities
+y <- rbinom(n, size = 1, prob = prob_y)
+
+# Create a data frame
+simulated_data <- data.frame(x = x, y = y, prob_y = prob_y)
+
+# Verify the overall percentage of y = 1
+mean(y)
+
+# Split x into quintiles and display the percentage of y = 1 for each quintile
+quintile_summary <- simulated_data %>%
+  mutate(quintile = ntile(x, 5)) %>%
+  group_by(quintile) %>%
+  summarize(percent_y_1 = mean(y) * 100,
+            mean_x = mean(x))
+
+# Print quintile summary
+print(quintile_summary)
+
 ```
 
 ```{r}
-simulated_data %>% 
-  pull(y) %>% 
-  sum()
+plot_prob_y_x <- ggplot(simulated_data, aes(x = x, y = prob_y)) +
+  geom_point(alpha = 0.5, color = "blue") +
+  geom_smooth(method = "lm", se = FALSE, color = "red", size = 0.7) +
+  labs(title = "Probability of y = 1 vs. x",
+       x = "x",
+       y = "Probability of y = 1") +
+  theme_minimal() +
+  theme(axis.title = element_text(face = "bold", size = 10),
+        axis.text = element_text(size = 10),
+        plot.title = element_text(hjust = 0.5))
 
-hist(prob_y)
+# Display the plot
+print(plot_prob_y_x)
 ```
+
+```{r}
+p_combined <- ggplot(quintile_summary, aes(x = factor(quintile))) +
+  geom_bar(aes(y = percent_y_1), stat = "identity", fill = "skyblue") +
+  geom_point(aes(y = mean_x*0.01), color = "red", size = 3) +
+  geom_line(aes(y = mean_x*0.01, group = 1), color = "red", size = 1) +
+  labs(title = "Percentage of y = 1 and Mean of x for Each Quintile",
+       x = "Quintile of x",
+       y = "Percentage of y = 1 / Mean of x") +
+  theme_minimal() +
+  scale_y_continuous(
+    name = "Percentage of y = 1",
+    sec.axis = sec_axis(~ ., name = "Mean of x")
+  ) +
+  theme(axis.title.y.right = element_text(color = "red"))
+
+# Display the plot
+print(p_combined)
+```
+
+```{r}
+simulated_data
+```
+
 
