@@ -130,16 +130,13 @@ print(quintile_summary)
 ```
 
 ```{r Simulate f(y) = linear(x))}
-set.seed(42)
-
-set.seed(42)
-
+#set.seed(42)
 # Generate normally distributed x with mean 50 and standard deviation 10
-n <- 100000
-x <- round(rnorm(n, mean = 50, sd = 10))
-
+n <- 500000
+x <- round(rnorm(n, mean = 190, sd = 8)) %>% 
+  pmax(pmin(., 200), 0)
 # Calculate linear probabilities with a custom scaling to achieve ~1% overall probability of y = 1
-prob_y <- (x - min(x)) / (max(x) - min(x)) * 0.02
+prob_y <- (x - min(x)) / (max(x) - min(x)) * 0.08
 
 # Sample y based on the calculated probabilities
 y <- rbinom(n, size = 1, prob = prob_y)
@@ -151,14 +148,6 @@ simulated_data <- data.frame(x = x, y = y, prob_y = prob_y)
 mean(y)
 
 # Split x into quintiles and display the percentage of y = 1 for each quintile
-quintile_summary <- simulated_data %>%
-  mutate(quintile = ntile(x, 5)) %>%
-  group_by(quintile) %>%
-  summarize(percent_y_1 = mean(y) * 100,
-            mean_x = mean(x))
-
-# Print quintile summary
-print(quintile_summary)
 
 ```
 
@@ -175,20 +164,44 @@ plot_prob_y_x <- ggplot(simulated_data, aes(x = x, y = prob_y)) +
         plot.title = element_text(hjust = 0.5))
 
 # Display the plot
-print(plot_prob_y_x)
+plot_prob_y_x
+hist(x)
+max(x)
+min(x)
+print(mean(y))
 ```
 
 ```{r}
-p_combined <- ggplot(quintile_summary, aes(x = factor(quintile))) +
-  geom_bar(aes(y = percent_y_1), stat = "identity", fill = "skyblue") +
-  geom_point(aes(y = mean_x*0.01), color = "red", size = 3) +
-  geom_line(aes(y = mean_x*0.01, group = 1), color = "red", size = 1) +
+supplemental_page_84 <-
+simulated_data %>%
+  mutate(decile = ntile(x,10)) %>%
+  group_by(decile) %>%
+  summarize(total_cases= sum(y),
+            total_controls = length(y) - sum(y),
+            Risk_Allels_mean = mean(x),
+            Risk_Allels_sd = sd(x),
+            prevalence = mean(y) * 100) %>% 
+  mutate(allele_increase_perc = (Risk_Allels_mean/first(Risk_Allels_mean)-1)*100,
+         prevalence_increase_perc = (prevalence/first(prevalence)-1)*100)
+
+
+# Print quintile summary
+print(supplemental_page_84)
+```
+
+```{r}
+p_combined <- ggplot(supplemental_page_84, aes(x = factor(decile))) +
+  geom_point(aes(y = prevalence), color = "skyblue", size = 3) +
+  geom_line(aes(y = prevalence, group = 1), color = "skyblue", size = 1) +
+  #geom_point(aes(y = Risk_Allels_mean), color = "red", size = 3) +
+  #geom_line(aes(y = Risk_Allels_mean, group = 1), color = "red", size = 1) +
+  #geom_errorbar(aes(ymin = (Risk_Allels_mean - Risk_Allels_sd), ymax = (Risk_Allels_mean + Risk_Allels_sd)), color = "darkred", width = 0.2) +
   labs(title = "Percentage of y = 1 and Mean of x for Each Quintile",
-       x = "Quintile of x",
+       x = "Decile",
        y = "Percentage of y = 1 / Mean of x") +
   theme_minimal() +
   scale_y_continuous(
-    name = "Percentage of y = 1",
+    name = "Prevalence in %",
     sec.axis = sec_axis(~ ., name = "Mean of x")
   ) +
   theme(axis.title.y.right = element_text(color = "red"))
@@ -198,7 +211,190 @@ print(p_combined)
 ```
 
 ```{r}
-simulated_data
+bin_size <- 2
+max_x <- max(simulated_data$x)
+
+data.splits <-
+simulated_data %>% 
+mutate(split = cut(x, breaks = seq(0, length_x, by = bin_size), 
+                      include.lowest = TRUE, right = FALSE, labels = FALSE)) %>% 
+  group_by(split) %>% 
+  summarize(mean_x = mean(x),
+            sd_x = sd(x),
+            prev_y = mean(y),
+            n=n()) %>%
+  filter(n>=200) %>% 
+  mutate(prev_se = sqrt(prev_y*(1-prev_y)/n))
 ```
+
+```{r Rebuilding figure2 from Schunkert paper, fig.width=4, fig.height=7}
+# Calculate the max y value plus standard error
+max_y_plus_se <- max(data.splits$prev_y + data.splits$prev_se)
+
+# Define the polygon coordinates based on the filtered data
+x_coords <- c(min(supplemental_page_84$Risk_Allels_mean[2]), min(supplemental_page_84$Risk_Allels_mean[2]), max(supplemental_page_84$Risk_Allels_mean[9]), max(supplemental_page_84$Risk_Allels_mean[9]))
+y_coords <- c(0, max_y_plus_se, max_y_plus_se, 0)
+
+# Create the plot
+p <- ggplot(data.splits, aes(x = mean_x, y = prev_y)) +
+  geom_point(color = "blue", size = 3) +  # Plot the dots
+  geom_errorbar(aes(ymin = prev_y - prev_se, ymax = prev_y + prev_se), width = 0.2, color = "black") +
+  geom_polygon(
+    data = data.frame(x = x_coords, y = y_coords),  # Convert to a data frame
+    aes(x = x, y = y),
+    fill = rgb(0.2, 0.2, 0.2, 0.2),
+    color = NA
+  ) +
+  labs(x = "Mean number of risk alleles", y = "Prevalence", title = "UKB CAD") +
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    axis.line = element_line(color = "black")  # Keep the axes lines
+  )
+
+# Display the plot
+print(p)
+
+```
+
+```{r Code graphics from Schunkert paper}
+analysis <- function(dat, pheno) {
+  modComp <- summary(glm(CC ~ NRA, family = "binomial", data = dat))$coefficients
+  dat$grp <- round(dat$NRA)
+  
+  # Aggregations
+  prev_p <- aggregate(dat$CC, by = list(dat$grp), FUN = mean, na.rm = TRUE)
+  prev_n <- aggregate(dat$CC, by = list(dat$grp), FUN = sum, na.rm = TRUE)
+  prev_N <- aggregate(dat$CC, by = list(dat$grp), FUN = function(x) length(!is.na(x)))
+  allele_c <- aggregate(dat$NRA, by = list(dat$grp), FUN = mean)
+  
+  d <- cbind.data.frame(N = prev_N$x, n = prev_n$x, p = prev_p$x, numAllele = allele_c$x)
+  d$p_se <- sqrt(d$p * (1 - d$p) / d$N)
+  d <- d[which(d$N >= 200),]
+  d$px <- d$p / d$numAllele
+  d$px_se <- d$p_se / d$numAllele
+  
+  # GLM models
+  modelLogit <- glm(cbind(n, N) ~ numAllele, data = d, family = binomial(link = "logit"))
+  modelProbit <- glm(cbind(n, N) ~ numAllele, data = d, family = binomial(link = "probit"))
+  modelLog <- glm(cbind(n, N) ~ numAllele, data = d, family = binomial(link = "log"))
+  modelLinear <- lm(p ~ numAllele, data = d, weights = N)
+  
+  predLogit <- predict(modelLogit, type = "response")
+  predProbit <- predict(modelProbit, type = "response")
+  predLog <- predict(modelLog, type = "response")
+  predLin <- predict(modelLinear, type = "response")
+  
+  Rlogit <- round(unlist(cor.test(d$p, predLogit)[c("estimate", "conf.int")]), 2)
+  Rprobit <- round(unlist(cor.test(d$p, predProbit)[c("estimate", "conf.int")]), 2)
+  Rlog <- round(unlist(cor.test(d$p, predLog)[c("estimate", "conf.int")]), 2)
+  Rlin <- round(unlist(cor.test(d$p, predLin)[c("estimate", "conf.int")]), 2)
+  
+  Cols <- c("seagreen", "coral1", "goldenrod", "blue")
+  l <- which(d[, "p_se"] > 0)
+  
+  plot(d[l, "numAllele"], d[l, "p"], pch = 19, axes = FALSE, 
+       ylim = c(0, max(d$p + d$p_se)), 
+       xlim = c(min(d$numAllele - sd(d$numAllele)), max(d$numAllele + sd(d$numAllele))), 
+       main = pheno, xlab = "Mean number of risk alleles", ylab = "Prevalence")
+  axis(1)
+  axis(2)
+  
+  for (i in 1:nrow(d)) {
+    if (d[i, "p_se"] > 0) {
+      arrows(d[i, "numAllele"], d[i, "p"] - d[i, "p_se"], d[i, "numAllele"], d[i, "p"] + d[i, "p_se"], 
+             col = "grey", angle = 90, len = 0.05)
+      arrows(d[i, "numAllele"], d[i, "p"] + d[i, "p_se"], d[i, "numAllele"], d[i, "p"] - d[i, "p_se"], 
+             col = "grey", angle = 90, len = 0.05)
+    }
+  }
+  
+  matlines(d$numAllele, cbind(predLogit, predLog), col = Cols, lwd = 2)
+  abline(a = modelLog$coefficients[1], b = modelLog$coefficients[2], col = 4, lty = 3)
+  quant <- quantile(dat$NRA, probs = c(0.1, 0.9))
+  
+  # Plot polygon
+  polygon(
+    x = c(quant[1], quant[1], quant[2], quant[2]),
+    y = c(0, max(d$p), max(d$p), 0),
+    col = rgb(0.2, 0.2, 0.2, 0.2),
+    border = NA
+  )
+  
+  # Add legend
+  legend(
+    "topleft",
+    legend = c(
+      paste0("Logit: R=", Rlogit[1], " (95%CI: [", Rlogit[2], "-", Rlogit[3], "])"),
+      paste0("Probit: R=", Rprobit[1], " (95%CI: [", Rprobit[2], "-", Rprobit[3], "])"),
+      paste0("Linear: R=", Rlin[1], " (95%CI: [", Rlin[2], "-", Rlin[3], "])"),
+      paste0("Log: R=", Rlog[1], " (95%CI: [", Rlog[2], "-", Rlog[3], "])")
+    ),
+    col = Cols, cex = 0.9, box.lty = 0, lwd = 2, bg = "transparent"
+  )
+  
+  # Plot points with error bars
+  plot(
+    d[l, "numAllele"], d[l, "px"], pch = 19, axes = FALSE,
+    ylim = c(0, max(d$px + d$px_se)),
+    xlim = c(min(d$numAllele - sd(d$numAllele)), max(d$numAllele + sd(d$numAllele))),
+    main = pheno, xlab = "Mean number of risk alleles", ylab = "Prevalence/Allele"
+  )
+  axis(1)
+  axis(2)
+  
+  for (i in 1:nrow(d)) {
+    if (d[i, "px_se"] > 0) {
+      arrows(
+        d[i, "numAllele"], d[i, "px"] - d[i, "px_se"],
+        d[i, "numAllele"], d[i, "px"] + d[i, "px_se"],
+        col = "grey", angle = 90, len = 0.05
+      )
+      arrows(
+        d[i, "numAllele"], d[i, "px"] + d[i, "px_se"],
+        d[i, "numAllele"], d[i, "px"] - d[i, "px_se"],
+        col = "grey", angle = 90, len = 0.05
+      )
+    }
+  }
+  
+  # Fit models
+  modelLogit <- glm(px ~ numAllele, data = d, family = binomial(link = "logit"))
+  modelLog <- glm(px ~ numAllele, data = d, family = binomial(link = "log"))
+  
+  # Predictions
+  predLogit <- predict(modelLogit, type = "response")
+  predLog <- predict(modelLog, type = "response")
+  
+  # Correlations
+  Rlogit <- round(unlist(cor.test(d$p, predLogit)[c("estimate", "conf.int")]), 2)
+  Rlog <- round(unlist(cor.test(d$p, predLog)[c("estimate", "conf.int")]), 2)
+  
+  # Plot lines
+  matlines(d$numAllele, cbind(predLogit, predLog), col = Cols, lwd = 2)
+  
+  # Quantiles and polygon
+  quant <- quantile(dat$NRA, probs = c(0.1, 0.9))
+  polygon(
+    x = c(quant[1], quant[1], quant[2], quant[2]),
+    y = c(0, max(d$px), max(d$px), 0),
+    col = rgb(0.2, 0.2, 0.2, 0.2),
+    border = NA
+  )
+  
+  # Legend
+  legend(
+    "topleft",
+    legend = c(
+      paste0("Logit: R=", Rlogit[1], " (95%CI: [", Rlogit[2], "-", Rlogit[3], "])"),
+      paste0("Log: R=", Rlog[1], " (95%CI: [", Rlog[2], "-", Rlog[3], "])")
+    ),
+    col = Cols, cex = 0.9, box.lty = 0, lwd = 2, bg = "transparent"
+  )
+}
+```
+
+
 
 
