@@ -11,6 +11,7 @@ knitr::opts_chunk$set(include = F)
 ```{r Packages}
 library(dplyr)
 library(tidyr)
+library(readr)
 library(magrittr)
 library(ggplot2)
 library(pander)
@@ -512,5 +513,36 @@ ggplot(summed_values_long, aes(x = sum_value)) +
        x = "Sum of Values",
        y = "Frequency") +
   theme_minimal()
+```
+
+```{r}
+data <- read.delim("data/schunkert_risk_allels.csv", sep = " ", header = FALSE)
+```
+
+
+```{r}
+df <- read_delim("data/schunkert_risk_allels_cleaned.csv", col_names = c("SNP", "CHR", "BP", "A1", "OR", "P_VALUE", "Risk_allele_frequency_UKB"), delim = " ") %>% 
+  mutate(
+    CHR = as.numeric(CHR),
+    BP = as.numeric(BP),
+    OR = as.numeric(OR),
+    P_VALUE = as.character(P_VALUE),
+    Risk_allele_frequency_UKB = as.numeric(Risk_allele_frequency_UKB)
+  )
+
+ggplot(df, aes(x = Risk_allele_frequency_UKB, y = OR)) +
+  geom_point() +
+  labs(
+    title = "OR vs. Risk Allele Frequency UKB",
+    x = "Risk Allele Frequency UKB",
+    y = "Odds Ratio (OR)"
+  ) +
+  theme_minimal()+
+  theme(
+    plot.background = element_rect(fill = "white"),  # Set the plot background to white
+    panel.background = element_rect(fill = "white")
+    )
+
+ggsave("graphics/or_vs_risk_allele_frequency.png")
 ```
 
