@@ -10,6 +10,7 @@ knitr::opts_chunk$set(include = F)
 
 ```{r Packages}
 library(dplyr)
+library(tidyr)
 library(magrittr)
 library(ggplot2)
 library(pander)
@@ -79,64 +80,15 @@ remove_outliers <- function(data, variables, multiplier = 2) {
 }
 ```
 
-```{r Simulate f(y)=logit of x}
-set.seed(123)
-
-# Step 1: Simulate x from a normal distribution
-x <- rnorm(100000, mean = 50, sd = 15)
-x <- round(x)  # Make x integers
-x <- ifelse(x < 1, 1, ifelse(x > 100, 100, x))  # Ensure x is within 1 to 100
-
-# Step 2: Calculate probabilities for y = 1 using a linear function
-intercept <- -4.605  # Base probability for y = 1 = 0.01 (logit(p) = log(p/1-p)) = -4.605
-slope <- 0.01     # Influence of x on probability
-
-# Linear transformation to calculate the logit
-logit <- intercept + slope * x
-
-# Convert logit to probability
-prob_y <- exp(logit) / (1 + exp(logit))
-
-# Ensure the overall probability is approximately 1%
-#prob_y <- prob_y * (0.01 / mean(prob_y))
-
-# Clip probabilities to be within [0, 1]
-prob_y <- pmin(pmax(prob_y, 0), 1)
-
-# Step 3: Sample y using these probabilities
-y <- rbinom(length(x), size = 1, prob = prob_y)
-
-# Combine into a dataframe
-simulated_data <- data.frame(x = x, y = y)
-
-# Step 4: Split x into quintiles
-simulated_data$quintile <- cut(simulated_data$x, 
-                               breaks = quantile(simulated_data$x, probs = seq(0, 1, by = 0.1)), 
-                               include.lowest = TRUE, 
-                               labels = FALSE)
-
-# Step 5: Calculate the percentage of y = 1 and the mean of x for each quintile
-quintile_summary <- simulated_data %>%
-  group_by(quintile) %>%
-  summarize(
-    total = n(),
-    count_y_1 = sum(y),
-    percent_y_1 = (count_y_1 / total) * 100,
-    mean_x = mean(x)
-  )
-
-# Print the summary
-print(quintile_summary)
-```
-
-```{r Simulate f(y) = linear(x))}
-set.seed(2)
+```{r Simulate prob(y=1) = x*constant}
+set.seed(1)
 # Generate normally distributed x with mean 50 and standard deviation 10
-n <- 500000
-x <- round(rnorm(n, mean = 190, sd = 10)) %>% 
-  pmax(pmin(., 200), 0)
+n <- 427350
+
+x <- round(rnorm(n, mean = 190, sd = 8.5))
+
 # Calculate linear probabilities with a custom scaling to achieve ~4% overall probability of y = 1
-prob_y <- (x - min(x)) / (max(x) - min(x)) * 0.08
+prob_y <- (x - min(x)) / (max(x) - min(x)) * 0.093
 
 # Sample y based on the calculated probabilities
 y <- rbinom(n, size = 1, prob = prob_y)
@@ -146,6 +98,7 @@ simulated_data <- data.frame(x = x, y = y, prob_y = prob_y)
 
 # Verify the overall percentage of y = 1
 mean(y)
+sum(y)
 ```
 
 ```{r graphics to check properties of simulated data}
@@ -442,6 +395,122 @@ analysis <- function(dat, pheno) {
 }
 ```
 
+```{r simulate distribution several times and compare outcomes}
+# Initialize a vector to store the maximum prevalence increase percentages
+runs <- 1000
+max_prevalence_increases <- numeric(runs)
 
+for (i in 1:runs) {
+  set.seed(i)
+  
+  # Generate normally distributed x with mean 190 and standard deviation 8.5
+  n <- 427350
+  x <- round(rnorm(n, mean = 190, sd = 8.5))
+  
+  # Calculate linear probabilities with a custom scaling to achieve ~4% overall probability of y = 1
+  prob_y <- (x - min(x)) / (max(x) - min(x)) * 0.093
+  
+  # Sample y based on the calculated probabilities
+  y <- rbinom(n, size = 1, prob = prob_y)
+  
+  # Create a data frame
+  simulated_data <- data.frame(x = x, y = y, prob_y = prob_y)
+  
+  # Process the data to compute supplemental statistics
+  supplemental_page_84 <- simulated_data %>%
+    mutate(decile = ntile(x, 10)) %>%
+    group_by(decile) %>%
+    summarize(
+      total_cases = sum(y),
+      total_controls = length(y) - sum(y),
+      Risk_Allels_mean = mean(x),
+      Risk_Allels_sd = sd(x),
+      prevalence = mean(y) * 100
+    ) %>%
+    mutate(
+      allele_increase_perc = (Risk_Allels_mean / first(Risk_Allels_mean) - 1) * 100,
+      prevalence_increase_perc = (prevalence / first(prevalence) - 1) * 100
+    )
+  
+  # Record the maximum prevalence increase percentage for the current seed
+  max_prevalence_increases[i] <- max(supplemental_page_84$prevalence_increase_perc)
+}
 
+# Convert the vector to a data frame for plotting
+results_df <- data.frame(max_prevalence_increase = max_prevalence_increases)
+
+# Plot the histogram of maximum prevalence increases
+ggplot(results_df, aes(x = max_prevalence_increase)) +
+  geom_histogram(binwidth = 5, color = "black", fill = "lightblue") +
+  labs(
+    x = "Maximum Prevalence Increase (%)",
+    y = "Frequency",
+    title = "Histogram of Maximum Prevalence Increases Across Simulations"
+  ) +
+  theme_minimal()
+```
+
+```{r Simulate again this time with allels}
+set.seed(1)
+
+# Parameters
+n_cases <- 10000
+n_vars <- 230
+mean_sum <- 190
+sd_sum <- 8.5
+
+# Step 1: Generate the desired row-wise sums
+desired_sums <- round(rnorm(n_cases, mean = mean_sum, sd = sd_sum))
+
+# Initialize the data frame to hold binary variables
+extended_data <- data.frame(matrix(0, nrow = n_cases, ncol = n_vars))
+colnames(extended_data) <- paste0("V", 1:n_vars)
+extended_data <- extended_data %>% mutate(across(everything(), as.integer))
+
+# Step 2: Populate binary variables
+for (i in 1:n_cases) {
+  indices <- sample(seq_len(n_vars), desired_sums[i], replace = FALSE)
+  extended_data[i, indices] <- 1
+}
+
+# Add the desired sums to the data frame for verification
+extended_data$x <- rowSums(extended_data)
+
+# Verification of the distribution
+summary(extended_data$x)
+hist(extended_data$x, breaks = 50, main = "Distribution of Case-wise Sums", xlab = "Sum")
+
+# Display the first few rows of the data frame
+head(extended_data)
+
+# Calculate linear probabilities with a custom scaling to achieve ~4% overall probability of y = 1
+prob_y <- (extended_data$case_sum - min(extended_data$case_sum)) / (max(extended_data$case_sum) - min(extended_data$case_sum)) * 0.093
+
+# Sample y based on the calculated probabilities
+y <- rbinom(n_cases, size = 1, prob = prob_y)
+
+simulated_data <-
+  cbind(extended_data,y, prob_y) %>% 
+  select(x=case_sum,y,prob_y,everything())
+
+```
+
+```{r}
+# Step 1: Calculate the sums for columns starting with "V"
+summed_values <- simulated_data %>%
+  select(starts_with("V")) %>%
+  summarize(across(everything(), sum))
+
+# Step 2: Transform the results into a long format
+summed_values_long <- summed_values %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "sum_value")
+
+# Step 3: Create the histogram
+ggplot(summed_values_long, aes(x = sum_value)) +
+  geom_histogram(binwidth = 15, color = "black", fill = "blue") +
+  labs(title = "Histogram of Summed Values of Columns Starting with 'V'",
+       x = "Sum of Values",
+       y = "Frequency") +
+  theme_minimal()
+```
 
