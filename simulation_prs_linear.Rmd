@@ -24,6 +24,7 @@ library(patchwork)
 library(conflicted)
 library(QuantPsyc)
 library(MeMoBootR)
+library(epitools)
 #library(png)
 ```
 
@@ -89,7 +90,7 @@ n <- 427350
 x <- round(rnorm(n, mean = 190, sd = 8.5))
 
 # Calculate linear probabilities with a custom scaling to achieve ~4% overall probability of y = 1
-prob_y <- (x - min(x)) / (max(x) - min(x)) * 0.093
+prob_y <- (x - min(x)) / (max(x) - min(x)) * 0.096
 
 # Sample y based on the calculated probabilities
 y <- rbinom(n, size = 1, prob = prob_y)
@@ -100,6 +101,31 @@ simulated_data <- data.frame(x = x, y = y, prob_y = prob_y)
 # Verify the overall percentage of y = 1
 mean(y)
 sum(y)
+```
+
+```{r Alternative Simulation with logit as link function - does not work as desired yet}
+set.seed(123)
+n <- 427350
+x <- round(rnorm(n, mean = 190, sd = 8.5))
+
+x_scaled <- (x - min(x)) / (max(x) - min(x))
+
+logit <- function(x) {
+  log(x/(1-x))
+}
+
+logit_x <- logit(x_scaled)
+
+prob_y <- exp(logit_x)/ (1+exp(logit_x))
+
+plot(x, prob_y)
+
+logit_x_scaled <- (logit_x - min(logit_x)) / (max(logit_x) - min(logit(x)))
+
+plot(x,logit_x)
+
+plot(x, logit_x_scaled)
+
 ```
 
 ```{r graphics to check properties of simulated data}
@@ -143,24 +169,31 @@ print(supplemental_page_84)
 ```
 
 ```{r plot to show the characteristis fo a decile plot}
+scaling_factor <- 0.04
+
 p_combined <- ggplot(supplemental_page_84, aes(x = factor(decile))) +
   geom_point(aes(y = prevalence), color = "skyblue", size = 3) +
   geom_line(aes(y = prevalence, group = 1), color = "skyblue", size = 1) +
-  #geom_point(aes(y = Risk_Allels_mean), color = "red", size = 3) +
-  #geom_line(aes(y = Risk_Allels_mean, group = 1), color = "red", size = 1) +
-  #geom_errorbar(aes(ymin = (Risk_Allels_mean - Risk_Allels_sd), ymax = (Risk_Allels_mean + Risk_Allels_sd)), color = "darkred", width = 0.2) +
+  geom_point(aes(y = Risk_Allels_mean*scaling_factor), color = "red", size = 3) +
+  geom_line(aes(y = Risk_Allels_mean*scaling_factor, group = 1), color = "red", size = 1) +
+  geom_errorbar(aes(ymin = (Risk_Allels_mean*scaling_factor - Risk_Allels_sd*scaling_factor), ymax = (Risk_Allels_mean*scaling_factor + Risk_Allels_sd*scaling_factor)), color = "darkred", width = 0.2) +
   labs(title = "Percentage of y = 1 and Mean of x for Each Quintile",
        x = "Decile",
        y = "Percentage of y = 1 / Mean of x") +
   theme_minimal() +
   scale_y_continuous(
     name = "Prevalence in %",
-    sec.axis = sec_axis(~ ., name = "Mean of x")
+    sec.axis = sec_axis(~ ., name = "Mean of x scaled")
   ) +
-  theme(axis.title.y.right = element_text(color = "red"))
+  theme(axis.title.y.right = element_text(color = "red"),
+        plot.background = element_rect(fill = "white"),  # Set the plot background to white
+        panel.background = element_rect(fill = "white")
+  )
 
 # Display the plot
 print(p_combined)
+
+ggsave("graphics/decile_prevalence.png", p_combined)
 ```
 
 ```{r split the data into groups of x like in the paper}
@@ -441,6 +474,7 @@ for (i in 1:runs) {
 results_df <- data.frame(max_prevalence_increase = max_prevalence_increases)
 
 # Plot the histogram of maximum prevalence increases
+null_prevalence_increase <-
 ggplot(results_df, aes(x = max_prevalence_increase)) +
   geom_histogram(binwidth = 5, color = "black", fill = "lightblue") +
   labs(
@@ -449,9 +483,13 @@ ggplot(results_df, aes(x = max_prevalence_increase)) +
     title = "Histogram of Maximum Prevalence Increases Across Simulations"
   ) +
   theme_minimal()
+
+#ggsave("graphics/null_prev_increase.png", null_prevalence_increase)
+
+max(results_df$max_prevalence_increase)
 ```
 
-```{r Simulate again this time with allels}
+```{r Simulate again this time with allels - not finished yet}
 set.seed(1)
 
 # Parameters
@@ -515,13 +553,8 @@ ggplot(summed_values_long, aes(x = sum_value)) +
   theme_minimal()
 ```
 
-```{r}
-data <- read.delim("data/schunkert_risk_allels.csv", sep = " ", header = FALSE)
-```
-
-
-```{r}
-df <- read_delim("data/schunkert_risk_allels_cleaned.csv", col_names = c("SNP", "CHR", "BP", "A1", "OR", "P_VALUE", "Risk_allele_frequency_UKB"), delim = " ") %>% 
+```{r Plot OR and prevalence fo risk allels in paper against each other}
+data.allele.freq <- read_delim("data/schunkert_risk_allels_cleaned.csv", col_names = c("SNP", "CHR", "BP", "A1", "OR", "P_VALUE", "Risk_allele_frequency_UKB"), delim = " ") %>% 
   mutate(
     CHR = as.numeric(CHR),
     BP = as.numeric(BP),
@@ -530,7 +563,7 @@ df <- read_delim("data/schunkert_risk_allels_cleaned.csv", col_names = c("SNP", 
     Risk_allele_frequency_UKB = as.numeric(Risk_allele_frequency_UKB)
   )
 
-ggplot(df, aes(x = Risk_allele_frequency_UKB, y = OR)) +
+ggplot(data.allele.freq, aes(x = Risk_allele_frequency_UKB, y = log(OR))) +
   geom_point() +
   labs(
     title = "OR vs. Risk Allele Frequency UKB",
@@ -543,6 +576,105 @@ ggplot(df, aes(x = Risk_allele_frequency_UKB, y = OR)) +
     panel.background = element_rect(fill = "white")
     )
 
-ggsave("graphics/or_vs_risk_allele_frequency.png")
+#ggsave("graphics/or_vs_risk_allele_frequency.png")
+
+# Perform the correlation test
+cor_test_result <- cor.test(data.allele.freq$Risk_allele_frequency_UKB, log(data.allele.freq$OR), use = "complete.obs")
+
+# Print the results
+print(cor_test_result)
+
+summary(data.allele.freq)
+
+hist(data.allele.freq$Risk_allele_frequency_UKB)
+
+hist(log(data.allele.freq$OR))
+
+hist(data.allele.freq$OR)
+```
+
+```{r}
+set.seed(123)
+
+# Step 1: Generate 1000 probabilities from a normal distribution
+n_vars <- 1000
+n_cases <- 1000
+mean_prob <- 0.5
+sd_prob <- 0.2
+probs <- rnorm(n_vars, mean = mean_prob, sd = sd_prob)
+
+# Step 2: Scale probabilities to fall between 0.2% and 98%
+scaled_probs <- pmin(pmax(probs, 0.002), 0.98)
+
+# Step 3: Generate binary variables based on these probabilities
+binary_matrix <- matrix(NA, nrow = n_cases, ncol = n_vars)
+
+for (i in 1:n_vars) {
+  binary_matrix[, i] <- rbinom(n_cases, size = 1, prob = scaled_probs[i])
+}
+
+# Step 4: Generate an additional binary variable with exactly 4.8% 1's
+additional_binary_var <- rep(0, n_cases)
+num_ones <- round(n_cases * 0.048)  # Calculate the number of 1's needed
+one_positions <- sample(n_cases, num_ones)
+additional_binary_var[one_positions] <- 1
+
+# Append the additional binary variable to the matrix
+binary_matrix <- cbind(binary_matrix, additional_binary_var)
+
+# Verify the distribution of percentages of 1's
+percent_ones <- colMeans(binary_matrix) * 100
+
+# Plot the distribution of percentages of 1's
+hist(percent_ones, breaks = 30, main = "Distribution of Percentages of 1's in Binary Variables", xlab = "Percentage of 1's")
+
+# Check the percentage of 1's in the additional variable
+additional_percentage <- mean(additional_binary_var) * 100
+print(additional_percentage)  # Should be exactly 4.8
+
+
+```
+
+```{r}
+# Number of binary variables
+n_vars <- 100
+n_cases <- 1000
+
+# Simulate the binary variables
+set.seed(123)
+percentages <- pnorm(seq(-3, 3, length.out = n_vars), mean = 0, sd = 1)
+binary_matrix <- matrix(0, nrow = n_cases, ncol = n_vars)
+
+for (i in 1:n_vars) {
+  binary_matrix[, i] <- rbinom(n_cases, 1, percentages[i])
+}
+
+# Add the additional binary variable with 4.8% 1s
+additional_binary_var <- rep(0, n_cases)
+additional_binary_var[sample(1:n_cases, 48)] <- 1
+
+# Initialize a vector to store the odds ratios
+odds_ratios <- numeric(n_vars)
+
+# Calculate odds ratio for each binary variable
+for (i in 1:n_vars) {
+  # Create a contingency table
+  contingency_table <- table(binary_matrix[, i], additional_binary_var)
+  
+  # Check for zero cells and handle accordingly
+  if (all(contingency_table > 0)) {
+    or_result <- oddsratio(contingency_table)
+    odds_ratios[i] <- or_result$measure[2, "estimate"]
+  } else {
+    odds_ratios[i] <- NA  # Assign NA if the odds ratio cannot be calculated
+  }
+}
+
+# Display the odds ratios
+odds_ratios
+
+# Optionally, plot the odds ratios
+hist(odds_ratios, breaks = 30, main = "Distribution of Odds Ratios", xlab = "Odds Ratio")
+
 ```
 
