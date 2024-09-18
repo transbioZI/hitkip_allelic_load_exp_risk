@@ -553,6 +553,8 @@ ggplot(summed_values_long, aes(x = sum_value)) +
   theme_minimal()
 ```
 
+Prevalence and Odds ratios
+
 ```{r Plot OR and prevalence fo risk allels in paper against each other}
 data.allele.freq <- read_delim("data/schunkert_risk_allels_cleaned.csv", col_names = c("SNP", "CHR", "BP", "A1", "OR", "P_VALUE", "Risk_allele_frequency_UKB"), delim = " ") %>% 
   mutate(
@@ -560,7 +562,8 @@ data.allele.freq <- read_delim("data/schunkert_risk_allels_cleaned.csv", col_nam
     BP = as.numeric(BP),
     OR = as.numeric(OR),
     P_VALUE = as.character(P_VALUE),
-    Risk_allele_frequency_UKB = as.numeric(Risk_allele_frequency_UKB)
+    Risk_allele_frequency_UKB = as.numeric(Risk_allele_frequency_UKB),
+    Allele = 1
   )
 
 ggplot(data.allele.freq, aes(x = Risk_allele_frequency_UKB, y = log(OR))) +
@@ -592,6 +595,28 @@ hist(log(data.allele.freq$OR))
 
 hist(data.allele.freq$OR)
 ```
+
+```{r Simulate expected distribution of PRS based on prevalence of Risk Allels}
+# Empirically: mean = 190; mean in first decile = 175.4, last decile = 205,2
+
+prob_vector <-
+rep(data.allele.freq$Risk_allele_frequency_UKB,2)
+
+sum_vector <-
+replicate(10000,sum(rbinom(length(prob_vector), size = 1, prob = prob_vector)))
+
+hist(sum_vector)
+summary(sum_vector)
+sd(sum_vector)
+
+sum_vector %>% 
+  data.frame(sum_vector = .) %>% 
+  mutate(decile = ntile(sum_vector,10)) %>% 
+  group_by(decile) %>% 
+  summarise(mean = mean(sum_vector))
+```
+
+Misc
 
 ```{r}
 set.seed(123)
