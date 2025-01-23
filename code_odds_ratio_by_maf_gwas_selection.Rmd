@@ -85,17 +85,18 @@ remove_outliers <- function(data, variables, multiplier = 2) {
 ```{r DATA loading}
 GWASs_list <- read.delim("~/Projects/hitkip_allelic_load_exp_risk/data/gwas/GWASs_list.tsv")
 ```
+
 ```{r ANALYSIS}
 ukb_gwas <-
 GWASs_list %>% 
-  filter(str_detect(title, "Exome sequ")) %>% 
+  filter(str_detect(title, "A generalized linear mixed model association tool for biobank-scale data|Computationally efficient whole-genome regression for quantitative and binary traits")) %>% 
   select(study_id,efo_trait, reported_trait, title, initial_sample, publication_date, snp_count) %>% 
   mutate(publication_date = as.Date(publication_date, format = "%Y-%m-%d")) %>% 
   arrange(efo_trait, title, publication_date)
 ```
 
 ```{r SAVE data}
-write.table(ukb_gwas, file = "data/gwas/ukb_gwas_selection.tsv", sep = "\t", row.names = TRUE, quote = FALSE)
+write.table(ukb_gwas, file = "data/gwas/ukb_gwas_selection_new.tsv", sep = "\t", row.names = TRUE, quote = FALSE)
 ```
 
 
