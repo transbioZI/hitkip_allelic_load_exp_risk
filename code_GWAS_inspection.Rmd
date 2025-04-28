@@ -1,0 +1,24 @@
+---
+title: "code_GWAS_inspection"
+author: "Tobias Gradinger"
+date: "2025-04-28"
+output: html_document
+---
+
+```{r SETUP}
+library(tidyverse)
+library(ranger)
+library(caret)
+library(ggplot2)
+library(readxl)
+```
+
+```{r LOAD DATA}
+dat <- readr::read_tsv("W:/HITKIP/share/Andrei/share/IBD/harmonized/28067908-GCST004131-EFO_0003767.h.tsv.gz")
+
+dat %>% 
+  filter(p_value < 0.000001)
+
+# Why is there noe effect allele frequency in the data?
+```
+
